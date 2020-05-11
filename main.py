@@ -111,9 +111,9 @@ def ga(population_size=MAX_POPULATION_SIZE,
 
     for generation in range(num_generations):
 
-        selection_probabilities = get_selection_probabilities(fitnesses)
-
         if np.random.random() <= population_reproduction_rate:
+            selection_probabilities = get_selection_probabilities(fitnesses)
+
             # Select two parents for mating according to their fitness.
             # indices contains the indices of the two chosen parent chromosomes in the population.
             # This is the "roulette wheel selection" approach.
