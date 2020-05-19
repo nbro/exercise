@@ -1,3 +1,10 @@
+# https://www.rennard.org/alife/english/gavintrgb.html
+# The Genetic Algorithm for finding the maxima of single-variable functions
+#   (http://www.researchinventy.com/papers/v4i3/F043046054.pdf)
+import os
+import time
+from os import path
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -5,17 +12,18 @@ np.set_printoptions(suppress=True)
 
 GENE_MIN_VALUE = 0
 GENE_MAX_VALUE = 100
+GENE_MAX_VALUE_EPSILON = 0.1
 GENE_MUTATION_RATE = 0.5
-GENE_CROSSOVER_RATE = 0.3
+GENE_CROSSOVER_RATE = 0.8
 
 MIN_POPULATION_SIZE = 2
 MAX_POPULATION_SIZE = 100
 POPULATION_REPRODUCTION_RATE = 1.0
 NUM_GENERATIONS = 10000
-SURVIVAL_RATE = 0.7
+REPLACEMENT_RATE = 0.99
 
 INDIVIDUAL_SIZE = 3
-WORST_INDIVIDUAL_FITNESS = 0.1
+WORST_INDIVIDUAL_FITNESS = 0
 
 
 def is_valid_gene(gene):
@@ -26,7 +34,8 @@ def is_valid_gene(gene):
 
 
 def generate_initial_population(population_size=MAX_POPULATION_SIZE):
-    return np.random.randint(GENE_MIN_VALUE, GENE_MAX_VALUE + 1, size=(population_size, INDIVIDUAL_SIZE))
+    return np.random.uniform(GENE_MIN_VALUE, GENE_MAX_VALUE + GENE_MAX_VALUE_EPSILON,
+                             size=(population_size, INDIVIDUAL_SIZE))
 
 
 def mutate(individual, gene_mutation_rate=GENE_MUTATION_RATE):
@@ -56,19 +65,31 @@ def crossover(parent1, parent2, gene_crossover_rate=GENE_CROSSOVER_RATE):
     return child1, child2
 
 
+def get_local_maximum():
+    return np.array([1, 1 / 3, np.sqrt(2 / np.e) / 3])
+
+
 def evaluate_individual(individual):
+    """Compute the value of the function f(x, y, z) = 2*x*z * exp(-x) - 2*y^3 + y^2 - 3*z^3 given a point of the
+    domain, i.e. the individual.
+
+    :param individual: a tuple of 3 elements (x, y, z).
+
+    :return: the value of f at individual
+    """
     assert individual.shape == (3,)
     x, y, z = individual
     return 2 * x * z * np.exp(-x) - 2 * (y ** 3) + (y ** 2) - 3 * (z ** 3)
 
 
 def get_fitnesses(population, worst_individual_fitness=WORST_INDIVIDUAL_FITNESS):
+    # This function performs "windowing" of the fitnesses values.
     assert population.shape[0] >= MIN_POPULATION_SIZE and population.shape[1] == INDIVIDUAL_SIZE
     assert worst_individual_fitness >= 0
     fitnesses = np.zeros(population.shape[0])
     for i, individual in enumerate(population):
         fitnesses[i] = evaluate_individual(individual)
-    fitnesses = fitnesses + (np.abs(np.min(fitnesses)) + worst_individual_fitness)
+    fitnesses = fitnesses + (np.abs(np.min(fitnesses)) + worst_individual_fitness)  # Windowing.
     assert all(i >= 0 for i in fitnesses)
     return fitnesses
 
@@ -76,6 +97,7 @@ def get_fitnesses(population, worst_individual_fitness=WORST_INDIVIDUAL_FITNESS)
 def get_selection_probabilities(fitnesses):
     # Calculate the selection probabilities based on the "fitness proportionate selection" (aka roulette wheel
     # selection) strategy.
+    assert all(x >= 0 for x in fitnesses)
     s = np.sum(fitnesses)
     selection_probabilities = fitnesses / s
     assert np.isclose(sum(selection_probabilities), 1)
@@ -98,7 +120,8 @@ def ga(population_size=MAX_POPULATION_SIZE,
        population_reproduction_rate=POPULATION_REPRODUCTION_RATE,
        gene_crossover_rate=GENE_CROSSOVER_RATE,
        gene_mutation_rate=GENE_MUTATION_RATE,
-       survival_rate=SURVIVAL_RATE):
+       replacement_rate=REPLACEMENT_RATE,
+       use_elitism=True):
     population = generate_initial_population(population_size)
 
     fitnesses = get_fitnesses(population)
@@ -122,7 +145,7 @@ def ga(population_size=MAX_POPULATION_SIZE,
             parent1 = population[indices[0]]
             parent2 = population[indices[1]]
 
-            # Cross-over the two parents to produce 2 new children.
+            # Cross-over the 2 parents to produce 2 new children.
             child1, child2 = crossover(parent1, parent2, gene_crossover_rate=gene_crossover_rate)
 
             # Mutate the two children.
@@ -130,11 +153,11 @@ def ga(population_size=MAX_POPULATION_SIZE,
             mutate(child2, gene_mutation_rate=gene_mutation_rate)
 
             # Replace the chromosomes in the population with the lowest fitness.
-            if np.random.random() < survival_rate:
+            if np.random.random() < replacement_rate:
                 population[np.argmin(fitnesses)] = child1
                 population[np.argmin(fitnesses)] = child2
 
-        fitnesses = get_fitnesses(population)
+            fitnesses = get_fitnesses(population)
 
         generations_best_individual[generation] = population[np.argmax(fitnesses)]
         generations_best_fitness[generation] = np.max(fitnesses)
@@ -142,74 +165,67 @@ def ga(population_size=MAX_POPULATION_SIZE,
     return generations_best_individual, generations_best_fitness
 
 
-def experiment(num_rollouts=5,
-               population_sizes=[MIN_POPULATION_SIZE, MAX_POPULATION_SIZE],
-               num_generations=NUM_GENERATIONS):
-    # The best individual (and the corresponding fitness) across all population sizes and rollouts.
-    best_individual = None
-    best_fitness = None
-    all_averages = []
-
-    for population_size in population_sizes:
-
-        # The best fitness (of an individual) across all generations for different number of rollouts.
-        generations_best_fitnesses = np.zeros((num_rollouts, NUM_GENERATIONS))
-
-        for rollout in range(num_rollouts):
-            generations_best_individual, generations_best_fitness = ga(population_size=population_size,
-                                                                       num_generations=num_generations)
-
-            idx = np.argmax(generations_best_fitness)
-
-            if best_individual is None:
-                assert best_fitness is None
-                best_individual = generations_best_individual[idx]
-                best_fitness = np.max(generations_best_fitness)
-
-            generations_best_fitnesses[rollout] = generations_best_fitness
-
-        average_generations_best_fitness = np.average(generations_best_fitnesses, axis=0)
-        all_averages.append(average_generations_best_fitness)
-
-    assert best_fitness is not None
-    assert best_individual is not None
-    assert all_averages is not None
-
-    return best_individual, best_fitness, all_averages
+def array_map(x, f):
+    return np.array(list(map(f, x)))
 
 
-def plot_averages(all_averages, population_sizes, num_rollouts):
+def plot_evolution(ys, xs=None, x_label="Generations", y_label="Best fitness", title=None):
     plt.figure()
-
-    for avg in all_averages:
-        plt.plot(avg)
-
-    plt.legend(population_sizes)
-    plt.xlabel("Generations")
-    plt.ylabel("Average fitness of {} rollouts".format(num_rollouts))
+    if xs is None:
+        plt.plot(ys)
+    else:
+        plt.plot(xs, ys)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.title(title)
+    plt.ticklabel_format(useOffset=False, style='plain')
     plt.show()
 
 
-def run_experiment():
-    num_rollouts = 5
-    population_sizes = [MAX_POPULATION_SIZE]
+def create_experiments_folder(experiments_folder_name="experiments", experiment_folder_name=None):
+    if not path.exists(experiments_folder_name):
+        os.makedirs(experiments_folder_name)
+    if experiment_folder_name is None:
+        experiment_folder_name = time.strftime("%Y-%m-%d-%H-%M-%S")
+    experiment_folder_path = path.join(experiments_folder_name, experiment_folder_name)
+    if not path.exists(experiment_folder_path):
+        os.makedirs(experiment_folder_path)
+    return experiment_folder_path
 
-    best_individual, best_fitness, all_averages = experiment(num_rollouts=num_rollouts,
-                                                             population_sizes=population_sizes)
+
+def experiment():
+    experiment_folder_path = create_experiments_folder()
+
+    generations_best_individual, generations_best_fitness = ga()
+
+    generations_best_value = array_map(generations_best_individual, evaluate_individual)
+    generations_best_gradient = array_map(generations_best_individual, evaluate_gradient)
+
+    idx = np.argmax(generations_best_value)
+    best_individual = generations_best_individual[idx]
+    best_function_value = generations_best_value[idx]
+    best_gradient = generations_best_gradient[idx]
 
     print("Best individual =", best_individual)
-    print("Best fitness =", best_fitness)
-    print("Evaluate individual =", evaluate_individual(best_individual))
-    print("Loss of best individual =", evaluate_gradient(best_individual))
+    print("Local maximum =", get_local_maximum())
+    print("Best function value =", best_function_value)
+    print("Best gradient =", best_gradient)
 
-    plot_averages(all_averages, population_sizes, num_rollouts)
+    np.savetxt(path.join(experiment_folder_path, "generations_best_individual.csv"), generations_best_individual)
+    np.savetxt(path.join(experiment_folder_path, "generations_best_fitness.csv"), generations_best_fitness)
+    np.savetxt(path.join(experiment_folder_path, "generations_best_value.csv"), generations_best_value)
+    np.savetxt(path.join(experiment_folder_path, "generations_best_gradient.csv"), generations_best_gradient)
+    np.savetxt(path.join(experiment_folder_path, "best_individual.csv"), best_individual)
+    np.savetxt(path.join(experiment_folder_path, "best_function_value.csv"), np.array([best_function_value]))
+    np.savetxt(path.join(experiment_folder_path, "best_gradient.csv"), np.array([best_gradient]))
+
+    plot_evolution(generations_best_fitness,
+                   title="Fitness of the best individual through the generations")
+    plot_evolution(generations_best_value, y_label="f(x)",
+                   title="Value of the best individual through the generations")
+    plot_evolution(generations_best_gradient, y_label=r"$\nabla$ f(x)",
+                   title="Gradient of the best individual through the generations")
 
 
-# TODO:
-#   1. implement multiplicative mutation
-#   2. stop searching when critical point is found
-#   3. use second derivative to understand if the found critical point is maximum or minimum
-#   (https://math.stackexchange.com/a/2058474/168764)
-# https://en.wikipedia.org/wiki/Fitness_proportionate_selection
 if __name__ == '__main__':
-    run_experiment()
+    experiment()
