@@ -14,12 +14,6 @@ Implement a genetic algorithm to maximize the numeric function
 
     f(x, y, z) = 2*x*z * exp(-x) - 2*y^3 + y^2 - 3*z^3
     
-with
-
-    x = p[0] 
-    y = p[1]
-    z = p[2]
-    
 such that `x`, `y` and `z` are in the range `[0, 100]`
 
 ## GA
