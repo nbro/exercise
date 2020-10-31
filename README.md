@@ -28,7 +28,7 @@ To solve this problem with a GA, I need to define the following entities
     - Crossover
     - Mutation
 
-See `main.py` for more details.
+See [`main.py`](./main.py) and [report.pdf](./report.pdf) for more details.
 
 ## Derivative
 
